@@ -47,8 +47,8 @@ The Selector accepts a `format` parameter with such values:
 * `Hash` : the type hash string
 * `Path` : the path to the original .msg/.srv/.action file
 
-Additionally, the value of some environment variables defined for the host can be queried using such Selector:
-**`@ros2_env/<environment_variable>`**
+Additionally, the value of some environment variables defined for the host can be queried using such Selector:  
+**`@ros2_env/<environment_variable>`**  
 For instance, querying on `@ros2_env/ROS_DISTRO` returns the ROS distribution name (e.g. `kilted`).
 
 ## Examples of Selectors to query
