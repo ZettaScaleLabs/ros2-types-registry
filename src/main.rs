@@ -12,6 +12,7 @@
 //
 
 use anyhow::anyhow;
+use futures::select;
 use std::{path::PathBuf, str::FromStr};
 use strum::{EnumString, VariantNames};
 use zenoh::{
@@ -19,6 +20,7 @@ use zenoh::{
     bytes::Encoding,
     internal::{plugins::PluginsManager, runtime::RuntimeBuilder},
     key_expr::format::{kedefine, keformat},
+    query::Query,
 };
 
 mod args;
@@ -28,8 +30,20 @@ mod type_description;
 mod type_info;
 
 kedefine!(
-    pub(crate) ke_queries: "@ros2_types/${type_name:**}",
+    pub(crate) keformat_ros2_types: "@ros2_types/${type_name:**}",
+    pub(crate) keformat_ros2_env: "@ros2_env/${env_var:*}",
 );
+
+// List of environment variables that can be queried via the @ros2_env/* queryable
+// If the queried variable is not in this list, an error is returned.
+const ALLOWED_ENV_VARS: &[&str] = &[
+    "ROS_DOMAIN_ID",
+    "RMW_IMPLEMENTATION",
+    "ROS_VERSION",
+    "ROS_PYTHON_VERSION",
+    "ROS_DISTRO",
+    "AMENT_PREFIX_PATH",
+];
 
 #[derive(Debug, Default, Clone, Copy, EnumString, PartialEq, Eq, VariantNames)]
 #[strum(ascii_case_insensitive)]
@@ -93,125 +107,206 @@ async fn main() -> anyhow::Result<()> {
         .start()
         .await
         .map_err(|err| anyhow!("failed to start Zenoh runtime: {err}"))?;
-    let session = zenoh::session::init(runtime.into())
+    let session = zenoh::session::init(runtime)
         .await
         .map_err(|err| anyhow!("failed to create Zenoh session: {err}"))?;
 
+    let ros2_types_queryable_ke =
+        keformat!(keformat_ros2_types::formatter(), type_name = "**").unwrap();
+    tracing::debug!("Declaring Queryable on '{ros2_types_queryable_ke}'");
+    let ros2_types_queryable = session
+        .declare_queryable(ros2_types_queryable_ke)
+        .await
+        .unwrap();
 
-
-    let queryable_key_expr = keformat!(ke_queries::formatter(), type_name = "**").unwrap();
-
-    tracing::debug!("Declaring Queryable on '{queryable_key_expr}'...");
-    let queryable = session.declare_queryable(queryable_key_expr).await.unwrap();
+    let ros2_env_queryable_ke = keformat!(keformat_ros2_env::formatter(), env_var = "*").unwrap();
+    tracing::debug!("Declaring Queryable on '{ros2_env_queryable_ke}'");
+    let ros2_env_queryable = session
+        .declare_queryable(ros2_env_queryable_ke)
+        .await
+        .unwrap();
 
     tracing::info!("Ready! Listening for queries...");
 
-    while let Ok(query) = queryable.recv_async().await {
-        tracing::debug!("Received query: {}", query.key_expr());
-        let ke = ke_queries::parse(query.key_expr()).unwrap();
+    loop {
+        select!(
+            query = ros2_types_queryable.recv_async() => {
+                if let Ok(q) = query {
+                    handle_ros2_types_query(q, &registry).await;
+                } else {
+                    tracing::error!("Query recceived but ros2_types_queryable was closed");
+                }
+            },
+            query = ros2_env_queryable.recv_async() => {
+                if let Ok(q) = query {
+                    handle_ros2_env_query(q).await;
+                } else {
+                    tracing::error!("Query recceived but ros2_env_queryable was closed");
+                }
+            },
+        )
+    }
+}
 
-        let format = match query.parameters().get("format") {
-            Some(f) => match ReplyFormat::from_str(f) {
-                Ok(fmt) => fmt,
-                Err(_) => {
+async fn handle_ros2_types_query(query: Query, registry: &registry::Registry<'_>) {
+    tracing::debug!("Received query: {}", query.key_expr());
+    let ke = match keformat_ros2_types::parse(query.key_expr()) {
+        Ok(ke) => ke,
+        Err(_) => {
+            tracing::error!(
+                "Received a query on '{}' but it doesn't match the '@ros2_types/**' queryable!",
+                query.key_expr()
+            );
+            return;
+        }
+    };
+
+    let format = match query.parameters().get("format") {
+        Some(f) => match ReplyFormat::from_str(f) {
+            Ok(fmt) => fmt,
+            Err(_) => {
+                query
+                    .reply_err(format!(
+                        "Unknown format '{f}' - accepted values are: {:?}",
+                        ReplyFormat::VARIANTS
+                    ))
+                    .await
+                    .unwrap_or_else(|e| {
+                        tracing::warn!("Error sending reply for {}: {e}", query.key_expr())
+                    });
+                return;
+            }
+        },
+        None => ReplyFormat::default(),
+    };
+
+    if let Some(type_name) = ke.type_name() {
+        let types = registry.get_types(type_name);
+        tracing::debug!("Found {} types matching {}", types.len(), type_name);
+
+        for type_info in types {
+            let reply_ke = keformat!(
+                keformat_ros2_types::formatter(),
+                type_name = &type_info.full_name
+            )
+            .expect("Shouldn't happen: all parameters are valid keyexpr!");
+            match format {
+                ReplyFormat::TypeDescription => {
+                    let response = serde_json::to_string(
+                        &type_info
+                            .type_description
+                            .type_description_msg
+                            .type_description,
+                    )
+                    .unwrap_or_else(|e| format!("Failed to serialize type description: {e}"));
                     query
-                        .reply_err(format!(
-                            "Unknown format '{f}' - accepted values are: {:?}",
-                            ReplyFormat::VARIANTS
-                        ))
+                        .reply(reply_ke, response)
+                        .encoding(Encoding::APPLICATION_JSON)
                         .await
                         .unwrap_or_else(|e| {
                             tracing::warn!("Error sending reply for {}: {e}", query.key_expr())
                         });
-                    continue;
                 }
-            },
-            None => ReplyFormat::default(),
-        };
 
-        if let Some(type_name) = ke.type_name() {
-            let types = registry.get_types(type_name);
-            tracing::debug!("Found {} types matching {}", types.len(), type_name);
-
-            for type_info in types {
-                let reply_ke = keformat!(ke_queries::formatter(), type_name = &type_info.full_name)
-                    .expect("Shouldn't happen: all parameters are valid keyexpr!");
-                match format {
-                    ReplyFormat::TypeDescription => {
-                        let response = serde_json::to_string(
-                            &type_info
-                                .type_description
-                                .type_description_msg
-                                .type_description,
-                        )
-                        .unwrap_or_else(|e| format!("Failed to serialize type description: {e}"));
-                        query
-                            .reply(reply_ke, response)
-                            .encoding(Encoding::APPLICATION_JSON)
-                            .await
+                ReplyFormat::FullTypeDescription => {
+                    let response =
+                        serde_json::to_string(&type_info.type_description.type_description_msg)
                             .unwrap_or_else(|e| {
-                                tracing::warn!("Error sending reply for {}: {e}", query.key_expr())
+                                format!("Failed to serialize type description: {e}")
                             });
-                    }
+                    query
+                        .reply(reply_ke, response)
+                        .encoding(Encoding::APPLICATION_JSON)
+                        .await
+                        .unwrap_or_else(|e| {
+                            tracing::warn!("Error sending reply for {}: {e}", query.key_expr())
+                        });
+                }
 
-                    ReplyFormat::FullTypeDescription => {
-                        let response =
-                            serde_json::to_string(&type_info.type_description.type_description_msg)
-                                .unwrap_or_else(|e| {
-                                    format!("Failed to serialize type description: {e}")
-                                });
-                        query
-                            .reply(reply_ke, response)
-                            .encoding(Encoding::APPLICATION_JSON)
-                            .await
-                            .unwrap_or_else(|e| {
-                                tracing::warn!("Error sending reply for {}: {e}", query.key_expr())
-                            });
-                    }
+                ReplyFormat::Definition => {
+                    query
+                        .reply(reply_ke, &type_info.definition_content)
+                        .encoding(Encoding::TEXT_PLAIN)
+                        .await
+                        .unwrap_or_else(|e| {
+                            tracing::warn!("Error sending reply for {}: {e}", query.key_expr())
+                        });
+                }
 
-                    ReplyFormat::Definition => {
-                        query
-                            .reply(reply_ke, &type_info.definition_content)
-                            .encoding(Encoding::TEXT_PLAIN)
-                            .await
-                            .unwrap_or_else(|e| {
-                                tracing::warn!("Error sending reply for {}: {e}", query.key_expr())
-                            });
-                    }
+                ReplyFormat::Mcap => {
+                    query
+                        .reply(reply_ke, registry.get_mcap_schema(type_info))
+                        .encoding(Encoding::TEXT_PLAIN)
+                        .await
+                        .unwrap_or_else(|e| {
+                            tracing::warn!("Error sending reply for {}: {e}", query.key_expr())
+                        });
+                }
 
-                    ReplyFormat::Mcap => {
-                        query
-                            .reply(reply_ke, registry.get_mcap_schema(type_info))
-                            .encoding(Encoding::TEXT_PLAIN)
-                            .await
-                            .unwrap_or_else(|e| {
-                                tracing::warn!("Error sending reply for {}: {e}", query.key_expr())
-                            });
-                    }
+                ReplyFormat::Hash => {
+                    query
+                        .reply(reply_ke, &type_info.type_hash)
+                        .encoding(Encoding::TEXT_PLAIN)
+                        .await
+                        .unwrap_or_else(|e| {
+                            tracing::warn!("Error sending reply for {}: {e}", query.key_expr())
+                        });
+                }
 
-                    ReplyFormat::Hash => {
-                        query
-                            .reply(reply_ke, &type_info.type_hash)
-                            .encoding(Encoding::TEXT_PLAIN)
-                            .await
-                            .unwrap_or_else(|e| {
-                                tracing::warn!("Error sending reply for {}: {e}", query.key_expr())
-                            });
-                    }
-
-                    ReplyFormat::Path => {
-                        query
-                            .reply(reply_ke, type_info.definition_path.to_string_lossy())
-                            .encoding(Encoding::TEXT_PLAIN)
-                            .await
-                            .unwrap_or_else(|e| {
-                                tracing::warn!("Error sending reply for {}: {e}", query.key_expr())
-                            });
-                    }
+                ReplyFormat::Path => {
+                    query
+                        .reply(reply_ke, type_info.definition_path.to_string_lossy())
+                        .encoding(Encoding::TEXT_PLAIN)
+                        .await
+                        .unwrap_or_else(|e| {
+                            tracing::warn!("Error sending reply for {}: {e}", query.key_expr())
+                        });
                 }
             }
         }
     }
+}
 
-    Ok(())
+async fn handle_ros2_env_query(query: Query) {
+    tracing::debug!("Received query: {}", query.key_expr());
+    let ke = match keformat_ros2_env::parse(query.key_expr()) {
+        Ok(ke) => ke,
+        Err(_) => {
+            tracing::error!(
+                "Received a query on '{}' but it doesn't match the '@ros2_env/*' queryable!",
+                query.key_expr()
+            );
+            return;
+        }
+    };
+
+    if ALLOWED_ENV_VARS.contains(&ke.env_var().as_str()) {
+        if let Some(value) = std::env::var_os(ke.env_var().as_str()) {
+            tracing::warn!(
+                "Environment variable {} has value {:?} => {}",
+                ke.env_var(),
+                value,
+                value.to_str().unwrap_or_default()
+            );
+            query
+                .reply(query.key_expr(), value.to_string_lossy())
+                .encoding(Encoding::TEXT_PLAIN)
+                .await
+                .unwrap_or_else(|e| {
+                    tracing::warn!("Error sending reply for {}: {e}", query.key_expr())
+                });
+        }
+    } else {
+        query
+            .reply_err(format!(
+                "Environment variable '{}' cannot be queried. Allowed variables are: {:?}",
+                ke.env_var(),
+                ALLOWED_ENV_VARS
+            ))
+            .encoding(Encoding::TEXT_PLAIN)
+            .await
+            .unwrap_or_else(|e| {
+                tracing::warn!("Error sending reply for {}: {e}", query.key_expr())
+            });
+    }
 }
