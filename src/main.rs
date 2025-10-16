@@ -107,7 +107,7 @@ async fn main() -> anyhow::Result<()> {
         .start()
         .await
         .map_err(|err| anyhow!("failed to start Zenoh runtime: {err}"))?;
-    let session = zenoh::session::init(runtime)
+    let session = zenoh::session::init(runtime.into())
         .await
         .map_err(|err| anyhow!("failed to create Zenoh session: {err}"))?;
 
