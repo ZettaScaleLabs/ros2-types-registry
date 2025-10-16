@@ -83,21 +83,17 @@ async fn main() -> anyhow::Result<()> {
     // initiate logging
     zenoh::init_log_from_env_or("info");
 
-    let mut registry = registry::Registry::new();
-    for path in get_ament_share_paths() {
-        registry.load_types_from_dir(&path);
-    }
-    tracing::info!("Total types in registry: {}", registry.get_size());
-
     // parse command line arguments
     let config = args::parse_args();
 
     // Plugin manager with REST plugin
     let mut plugins_manager = PluginsManager::static_plugins_only();
-    plugins_manager.declare_static_plugin::<zenoh_plugin_rest::RestPlugin, &str>("rest", true);
+    if let Ok(http_port) = config.get_json("plugins/rest/http_port") {
+        tracing::info!("REST plugin available on HTTP port {http_port}");
+        plugins_manager.declare_static_plugin::<zenoh_plugin_rest::RestPlugin, &str>("rest", true);
+    }
 
     // Create a Zenoh Runtime with the PluginManager and a Session.
-    tracing::debug!("Opening session...");
     let mut runtime = RuntimeBuilder::new(config)
         .plugins_manager(plugins_manager)
         .build()
@@ -126,8 +122,13 @@ async fn main() -> anyhow::Result<()> {
         .await
         .unwrap();
 
-    tracing::info!("Ready! Listening for queries...");
+    let mut registry = registry::Registry::new();
+    for path in get_ament_share_paths() {
+        registry.load_types_from_dir(&path);
+    }
+    tracing::info!("Total types in registry: {}", registry.get_size());
 
+    tracing::info!("Ready! Listening for queries...");
     loop {
         select!(
             query = ros2_types_queryable.recv_async() => {
@@ -282,12 +283,6 @@ async fn handle_ros2_env_query(query: Query) {
 
     if ALLOWED_ENV_VARS.contains(&ke.env_var().as_str()) {
         if let Some(value) = std::env::var_os(ke.env_var().as_str()) {
-            tracing::warn!(
-                "Environment variable {} has value {:?} => {}",
-                ke.env_var(),
-                value,
-                value.to_str().unwrap_or_default()
-            );
             query
                 .reply(query.key_expr(), value.to_string_lossy())
                 .encoding(Encoding::TEXT_PLAIN)
