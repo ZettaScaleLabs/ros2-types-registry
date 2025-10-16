@@ -94,6 +94,7 @@ For instance, querying on `@ros2_env/ROS_DISTRO` returns the ROS distribution na
     "type_name": "sensor_msgs/msg/Temperature"
     }
     ```
+
    </details>
 
 * **`@ros2_types/sensor_msgs/msg/Temperature?format=FullTypeDescription`**  
@@ -191,6 +192,7 @@ For instance, querying on `@ros2_env/ROS_DISTRO` returns the ROS distribution na
     }
     }
     ```
+
    </details>
 
 * **`@ros2_types/sensor_msgs/msg/Temperature?format=Definition`**  
@@ -207,6 +209,7 @@ For instance, querying on `@ros2_env/ROS_DISTRO` returns the ROS distribution na
 
     float64 variance             # 0 is interpreted as variance unknown.
     ```
+
     </details>
 
 * **`@ros2_types/sensor_msgs/msg/Temperature?format=Mcap`**  
@@ -248,7 +251,8 @@ For instance, querying on `@ros2_env/ROS_DISTRO` returns the ROS distribution na
 
     # Transform frame with which this data is associated.
     string frame_id
-    ````
+    ```
+
     </details>
 
 * **`@ros2_types/sensor_msgs/msg/Temperature?format=Hash`**  
@@ -257,7 +261,8 @@ For instance, querying on `@ros2_env/ROS_DISTRO` returns the ROS distribution na
 
     ```text
     RIHS01_72514a14126ab9f8a9abec974c78e5610a367b59db5da355ff1fb982d5bad4b8
-    ````
+    ```
+
     </details>
 
 * **`@ros2_types/sensor_msgs/msg/Temperature?format=Path`**  
@@ -266,7 +271,8 @@ For instance, querying on `@ros2_env/ROS_DISTRO` returns the ROS distribution na
 
     ```text
     /opt/ros/jazzy/share/sensor_msgs/msg/Temperature.msg
-    ````
+    ```
+
     </details>
 
 * **`@ros2_types/sensor_msgs/msg/*?format=Hash`**  
@@ -283,7 +289,7 @@ For instance, querying on `@ros2_env/ROS_DISTRO` returns the ROS distribution na
 The Zenoh REST plugin can be loaded by the Types Registry itself via the `--rest-http-port` option or can be loaded by any original Zenoh router (not `rmw_zenohd`).
 
 For instance running:  
-` ./target/release/ros2-types-registry --rest-http-port 8000`
+`./target/release/ros2-types-registry --rest-http-port 8000`
 you can query the Types Registry with such URLs:
 
 * `http://your_robot.local:8000/@ros2_types/sensor_msgs/msg/Temperature`
