@@ -4,16 +4,31 @@ A Zenoh application exploring all the ROS types available in a ROS 2 environment
 
 ## How to build it
 
-Install Rust if not already done.
-Then run:
-  `cargo build --release`
+### In a Docker image
+
+```bash
+# Build the image
+docker build -t ros2-types-registry .
+# Run the container
+docker run --network host --rm -it ros2-types-registry
+```
+
+### On your host
+
+* Install [Rust Toolchains](https://doc.rust-lang.org/cargo/getting-started/installation.html)
+
+* Build the project
+
+```bash
+cargo build --release
+```
 
 ## Usage
 
 The ROS 2 environment must be setup, especially the `AMENT_PREFIX_PATH` environment variable must be set to the list of paths where the ROS 2 packages are installed.
 
 ```bash
-$>  ./target/release/ros2-types-registry -h
+$ ./target/release/ros2-types-registry -h
 
 Usage: ros2-types-registry [OPTIONS]
 
@@ -26,6 +41,16 @@ Options:
       --no-multicast-scouting    Disable the multicast-based scouting mechanism
       --rest-http-port <SOCKET>  Configures HTTP interface for the REST API (disabled by default). Accepted values: - a port number - a string with format `<local_ip>:<port_number>` (to bind the HTTP server to a specific interface) - `none` to disable the REST API
   -h, --help                     Print help (see more with '--help')
+```
+
+* Run the `rmw_zenohd`.
+
+* Source your ROS 2 environment and run the `ros2-types-registry` to connect to rmw_zenohd.
+  * Modify the localhost to your `rmw_zenohd` IP.
+  * `--rest-http-port`: the HTTP port to receive REST API commands.
+
+```bash
+./target/release/ros2-types-registry -e tcp/localhost:7447 --rest-http-port 8080
 ```
 
 ## How does it work ?
