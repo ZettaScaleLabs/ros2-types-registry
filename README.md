@@ -2,6 +2,16 @@
 
 A Zenoh application exploring all the ROS types available in a ROS 2 environment and exposing informations on those types as a Zenoh Queryable.
 
+## Acknowledment
+
+This work is sponsored by  
+
+<p align="left">
+  <a href="https://www.dexory.com/">
+    <img height="50" src="images/Dexory_logo.png" alt="Dexory"/>
+  </a>
+</p>
+
 ## How to build it
 
 ### In a Docker image
