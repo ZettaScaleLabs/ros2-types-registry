@@ -29,8 +29,13 @@ mod registry;
 mod type_description;
 mod type_info;
 
+// Key expression for the Liveliness Token assessing this types registry is up and running
+const KE_LIVELINESS_TOKEN: &str = "@ros2_types";
+
 kedefine!(
+    // Key expression pattern for the Queryable on types
     pub(crate) keformat_ros2_types: "@ros2_types/${type_name:**}",
+    // Key expression pattern for the Queryable on environment variables
     pub(crate) keformat_ros2_env: "@ros2_env/${env_var:*}",
 );
 
@@ -107,29 +112,47 @@ async fn main() -> anyhow::Result<()> {
         .await
         .map_err(|err| anyhow!("failed to create Zenoh session: {err}"))?;
 
-    let ros2_types_queryable_ke =
-        keformat!(keformat_ros2_types::formatter(), type_name = "**").unwrap();
-    tracing::debug!("Declaring Queryable on '{ros2_types_queryable_ke}'");
-    let ros2_types_queryable = session
-        .declare_queryable(ros2_types_queryable_ke)
-        .await
-        .unwrap();
-
-    let ros2_env_queryable_ke = keformat!(keformat_ros2_env::formatter(), env_var = "*").unwrap();
-    tracing::debug!("Declaring Queryable on '{ros2_env_queryable_ke}'");
-    let ros2_env_queryable = session
-        .declare_queryable(ros2_env_queryable_ke)
-        .await
-        .unwrap();
-
+    // Create Registry and load all types
     let mut registry = registry::Registry::new();
     for path in get_ament_share_paths() {
         registry.load_types_from_dir(&path);
     }
     tracing::info!("Total types in registry: {}", registry.get_size());
 
+    // Declare Queryable for types
+    let ros2_types_queryable_ke = keformat!(keformat_ros2_types::formatter(), type_name = "**")
+        .map_err(|err| {
+            anyhow!(
+                "Internal error that shouldn't happen, formating ros2_types_queryable_ke: {err}"
+            )
+        })?;
+    tracing::debug!("Declaring Queryable on '{ros2_types_queryable_ke}'");
+    let ros2_types_queryable = session
+        .declare_queryable(ros2_types_queryable_ke)
+        .await
+        .map_err(|err| anyhow!("failed to declare queryable for types: {err}"))?;
+
+    // Declare Queryable for environment variables
+    let ros2_env_queryable_ke =
+        keformat!(keformat_ros2_env::formatter(), env_var = "*").map_err(|err| {
+            anyhow!("Internal error that shouldn't happen, formating ros2_env_queryable_ke: {err}")
+        })?;
+    tracing::debug!("Declaring Queryable on '{ros2_env_queryable_ke}'");
+    let ros2_env_queryable = session
+        .declare_queryable(ros2_env_queryable_ke)
+        .await
+        .map_err(|err| anyhow!("failed to declare queryable for environment variables: {err}"))?;
+
+    // Declare the Liveliness Token
+    let _liveliness_token = session
+        .liveliness()
+        .declare_token(KE_LIVELINESS_TOKEN)
+        .await
+        .map_err(|err| anyhow!("failed to create Liveliness Token: {err}"))?;
+
     tracing::info!("Ready! Listening for queries...");
     loop {
+        // Wait a query
         select!(
             query = ros2_types_queryable.recv_async() => {
                 if let Ok(q) = query {
