@@ -11,18 +11,20 @@
 //   Julien Enoch, <julien.enoch@zettascale.tech>
 //
 
-use crate::{
-    type_description::HashedTypeDescription,
-    type_info::{TypeInfo, TypeKind},
-};
 use core::convert::TryFrom;
 use std::path::PathBuf;
+
 use zenoh::key_expr::{
     keyexpr,
     keyexpr_tree::{IKeyExprTree, IKeyExprTreeMut, KeBoxTree},
     KeyExpr,
 };
 use zenoh_keyexpr::{keyexpr_tree::traits::IKeyExprTreeNode, OwnedKeyExpr};
+
+use crate::{
+    type_description::HashedTypeDescription,
+    type_info::{TypeInfo, TypeKind},
+};
 
 pub(crate) struct Registry<'a> {
     types: KeBoxTree<TypeInfo>,

@@ -10,10 +10,10 @@
 // Contributors:
 //   Julien Enoch, <julien.enoch@zettascale.tech>
 //
+use std::{path::PathBuf, str::FromStr};
 
 use anyhow::anyhow;
 use futures::select;
-use std::{path::PathBuf, str::FromStr};
 use strum::{EnumString, VariantNames};
 use zenoh::{
     self,

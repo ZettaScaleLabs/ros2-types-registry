@@ -11,9 +11,9 @@
 //   Julien Enoch, <julien.enoch@zettascale.tech>
 //
 //
+use serde::{Deserialize, Serialize};
 
 use crate::field_type::FieldTypeId;
-use serde::{Deserialize, Serialize};
 
 // Structure compliant with the rso2cli JSON schema defined in
 // https://github.com/ros2/rosidl/blob/kilted/rosidl_generator_type_description/resource/HashedTypeDescription.schema.json

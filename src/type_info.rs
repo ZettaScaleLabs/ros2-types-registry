@@ -10,8 +10,8 @@
 // Contributors:
 //   Julien Enoch, <julien.enoch@zettascale.tech>
 //
-
 use std::path::PathBuf;
+
 use strum::{AsRefStr, EnumString};
 use zenoh_keyexpr::OwnedKeyExpr;
 

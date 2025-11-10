@@ -10,13 +10,12 @@
 // Contributors:
 //   Julien Enoch, <julien.enoch@zettascale.tech>
 //
+use std::{fmt, str::FromStr};
 
 use serde::{
     de::{Error, Visitor},
     Deserialize, Deserializer, Serialize,
 };
-use std::fmt;
-use std::str::FromStr;
 use strum::{EnumString, FromRepr, VariantNames};
 
 // Structure compliant FIELD_TYPE constants defined in
