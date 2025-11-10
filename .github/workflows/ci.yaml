@@ -19,7 +19,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  RUST_TOOLCHAIN: ${{ vars.RUST_TOOLCHAIN || 'stable' }}
+  # Fix 1.75.0 for the ROS compatibility
+  RUST_TOOLCHAIN: ${{ vars.RUST_TOOLCHAIN || '1.75.0' }}
   CARGO_TERM_COLOR: always
 
 jobs:
